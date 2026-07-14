@@ -16,7 +16,6 @@ Usage:
 """
 
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -25,36 +24,36 @@ SOURCE_FILE = REPO_ROOT / "localization_hub.json"
 OUTPUT_DIR = REPO_ROOT / "outputs"
 
 
-def to_snake_case(name: str) -> str:
-    """Convert a PascalCase screen name like 'PurchaseTicketScreen' into
-    a short snake_case prefix like 'purchase_ticket'."""
-    name = name[:-6] if name.endswith("Screen") else name
-    s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
-    s2 = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1)
-    return s2.lower()
-
-
 def flatten(data: dict) -> dict:
     """Flatten the nested {Screen: {key: {ar, en}}} structure into a single
-    dict of {flat_key: {ar, en}}, validating that both languages are present."""
+    dict of {key: {ar, en}}, using the JSON key as-is (no screen prefix).
+
+    Screens commonly share the same key (e.g. btn_login, btn_continue,
+    nav_home) for shared UI chrome. That's fine as long as the ar/en values
+    match across screens - those are silently de-duplicated. If the same key
+    is used for two *different* strings in two screens, that's a real
+    authoring mistake and fails validation so it gets caught before it
+    reaches mobile devices.
+    """
     flat = {}
     errors = []
 
     for screen, entries in data.items():
-        prefix = to_snake_case(screen)
         for key, value in entries.items():
-            flat_key = f"{prefix}_{key}"
-
             if "ar" not in value or "en" not in value:
                 errors.append(f"{screen}.{key} is missing 'ar' or 'en'")
                 continue
 
-            if flat_key in flat:
-                errors.append(f"Duplicate generated key '{flat_key}' "
-                              f"(collision between screens)")
-                continue
+            if key in flat:
+                if flat[key] != value:
+                    errors.append(
+                        f"Key '{key}' is defined with conflicting ar/en "
+                        f"values in multiple screens (last seen in "
+                        f"'{screen}') - rename one of them to be unique"
+                    )
+                continue  # identical duplicate across screens - keep the first, skip re-adding
 
-            flat[flat_key] = value
+            flat[key] = value
 
     if errors:
         print("Validation failed:", file=sys.stderr)

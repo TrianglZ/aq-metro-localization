@@ -1,0 +1,45 @@
+name: Generate Localization Files
+
+# Runs whenever localization_hub.json changes on main (i.e. right after a
+# translation PR is merged), and regenerates the native iOS/Android files
+# in /outputs. Mobile developers consume /outputs via their build-time sync
+# scripts - see README.md - they never run this workflow or the Python
+# script themselves.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "localization_hub.json"
+      - "scripts/generate_strings.py"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate native string files
+        run: python3 scripts/generate_strings.py
+
+      - name: Commit and push /outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add outputs/
+          if git diff --cached --quiet; then
+            echo "No changes to outputs/ - nothing to commit."
+          else
+            git commit -m "chore: regenerate localization outputs [skip ci]"
+            git push
+          fi

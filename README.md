@@ -89,6 +89,7 @@ The file is grouped by screen or component module. Each key is a `snake_case` st
 
 - **Group by screen, not by feature.** Keep keys for a given screen (e.g. `HomeScreen`, `SettingsScreen`, `PurchaseTicketScreen`) together under that screen's object so developers can find strings quickly.
 - **Use clean, descriptive `snake_case` keys.** Prefix buttons with `btn_`, labels with `label_`, and titles with `_title` for consistency (e.g. `btn_continue`, `label_price`, `onboarding_1_title`).
+- **Keys are global, not per-screen.** The generator does *not* prefix keys with their screen name — `onboarding_1_title` is the actual key mobile developers reference, exactly as written in the JSON. It's fine to reuse the same key in multiple screens (e.g. `btn_login`, `nav_home`) as long as the `ar`/`en` values are identical everywhere it's used - shared UI chrome like nav bar labels relies on this. If the same key is given two *different* values in two screens, the generator script will fail validation in CI rather than silently picking one.
 - **Always provide both `ar` and `en` values.** A key missing either language will cause the generator script to fail validation in CI.
 - **Placeholders use curly braces.** Dynamic values (prices, dates, counts) should be written as `{variable_name}` in both languages so they map to the same native format specifier during generation, e.g. `"تنتهي في {time}"` / `"Expires at {time}"`.
 - **Don't touch `/outputs`.** If you need a string updated, edit the master JSON — CI takes care of the rest.
