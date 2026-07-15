@@ -191,11 +191,63 @@ preBuild.dependsOn downloadLocalization
 
 ---
 
+## Automated Figma Sync
+
+Beyond regenerating `/outputs` when `localization_hub.json` changes, this repo can also watch the Figma file itself and open a pull request automatically whenever a designer marks new content **Ready for Dev** — so no one has to manually copy text out of Figma and translate it by hand.
+
+### How it works
+
+```
+Designer marks a Figma section/frame "Ready for Dev"
+  (Figma's real Dev Mode status control — not a colored banner)
+             │
+             ▼
+.github/workflows/figma-sync.yml   (runs hourly + on-demand)
+             │
+             ▼
+scripts/figma_sync.py
+  1. Polls the Figma file for nodes with devStatus.type == "READY_FOR_DEV"
+  2. Skips anything already synced (tracked in .figma_sync_state.json)
+  3. Extracts the Arabic text from any new/changed node
+  4. Sends it to Claude to translate + structure into this repo's
+     {key: {ar, en}} schema
+             │
+             ▼
+Opens a pull request against localization_hub.json
+  (via peter-evans/create-pull-request — nothing is pushed to main directly)
+             │
+             ▼
+A human reviews and merges the PR  ←── the one remaining manual step
+             │
+             ▼
+generate-localization.yml regenerates /outputs, same as any other edit
+```
+
+### Why the PR review step stays manual
+
+Everything upstream of `localization_hub.json` can run unattended, but auto-merging straight to `main` is deliberately not part of this pipeline. Translating and structuring raw Figma text is a judgment call, not just a lookup — in practice this has meant catching mismatched languages on a single screen, truncated source text, inconsistent branding between screens, and ambiguous button labels. An LLM-drafted PR catches the easy 90%, but a quick human approval before merge is what keeps a bad translation or a mis-keyed string from shipping straight to two live mobile apps.
+
+### One-time setup
+
+1. **Get your designers to use Figma's real "Ready for Dev" status**, not a hand-drawn banner or colored rectangle. In Figma, select a top-level frame or section, then set its status via the Dev Mode status control (right-click the layer → status, or the status pill shown in the Dev Mode inspect panel). This is what actually sets the `devStatus` field the sync script reads — a custom banner doesn't produce anything the API can see.
+2. **Create a Figma personal access token** with the `file_content:read` scope (figma.com → account settings → Personal access tokens).
+3. **Add three repository secrets** (GitHub repo → Settings → Secrets and variables → Actions):
+   - `FIGMA_TOKEN` — the token from step 2
+   - `FIGMA_FILE_KEY` — the file key from the Figma URL, e.g. `LRmXlW9xeGKFBGZrMzUrRA`
+   - `ANTHROPIC_API_KEY` — used to translate and structure extracted text
+4. That's it — `figma-sync.yml` starts polling on its own schedule (hourly by default; adjust the `cron` value to taste), and `workflow_dispatch` lets you trigger a run manually from the Actions tab at any time.
+
+### Known limitation
+
+`.figma_sync_state.json` tracks which Ready-for-Dev nodes have already been synced by content hash, so re-running the workflow doesn't reopen a PR for something already merged. If a section that was already added to `localization_hub.json` by hand (like the ones in this repo today) later gets Figma's real status applied to it retroactively, the sync script will treat it as "new" the first time and may propose a PR that overlaps with existing keys. That's expected — it's exactly the kind of thing the human review step is there to catch and close without merging.
+
 ## Summary of Responsibilities
 
 | Role | Touches | Never touches |
 |---|---|---|
 | Translators / PMs | `localization_hub.json` | `/outputs`, generator script |
+| Designers | Figma's Ready for Dev status | `localization_hub.json` directly |
+| Figma sync workflow | Opens PRs against `localization_hub.json` | `/outputs`, `main` (never auto-merges) |
 | CI (GitHub Action) | `/outputs` (auto-commit) | `localization_hub.json` |
 | iOS developers | Xcode Run Script Phase config | Python script, `localization_hub.json` |
 | Android developers | Gradle `downloadLocalization` task | Python script, `localization_hub.json` |

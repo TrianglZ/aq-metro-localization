@@ -1,0 +1,62 @@
+name: Figma Ready-for-Dev Sync
+
+# Periodically checks the AQ Metro Figma file for sections/frames marked
+# "Ready for Dev" using Figma's real Dev Mode status (not a hand-drawn
+# banner). Any new or changed content is extracted, translated, and
+# structured via Claude, then merged into localization_hub.json.
+#
+# This workflow never merges to main by itself - it only opens a pull
+# request. A human still reviews and approves the translation/keys before
+# they reach the app. See README.md > "Automated Figma Sync" for why.
+
+on:
+  schedule:
+    - cron: "0 * * * *" # hourly - adjust to taste
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run Figma sync
+        env:
+          FIGMA_TOKEN: ${{ secrets.FIGMA_TOKEN }}
+          FIGMA_FILE_KEY: ${{ secrets.FIGMA_FILE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python3 scripts/figma_sync.py
+
+      - name: Open pull request with any changes
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore: sync new Ready-for-Dev content from Figma"
+          title: "Figma sync: new Ready-for-Dev content"
+          body: |
+            Auto-generated from Figma sections/frames newly marked **Ready for Dev**.
+
+            This PR was drafted by an LLM (translation + key naming) and has
+            **not** been human-reviewed yet. Please check:
+            - Translation quality and tone
+            - Key names don't collide with or duplicate existing keys
+            - No placeholder/example data (names, emails, phone numbers) leaked through
+
+            Merging this PR will trigger `generate-localization.yml`, which
+            regenerates `/outputs` automatically.
+          branch: figma-sync/auto-update
+          add-paths: |
+            localization_hub.json
+            .figma_sync_state.json
+          labels: |
+            localization
+            needs-review
