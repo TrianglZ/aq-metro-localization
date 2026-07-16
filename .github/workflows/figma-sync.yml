@@ -10,8 +10,14 @@ name: Figma Ready-for-Dev Sync
 # they reach the app. See README.md > "Automated Figma Sync" for why.
 
 on:
-  schedule:
-    - cron: "0 * * * *" # hourly - adjust to taste
+  # Paused: the scheduled trigger is commented out for now since it requires
+  # Anthropic API credits to run successfully. The main pipeline
+  # (localization_hub.json -> generate-localization.yml -> /outputs) does
+  # NOT depend on this workflow at all and keeps working normally either way.
+  # To resume automatic hourly runs once billing is set up, uncomment the
+  # `schedule` block below.
+  # schedule:
+  #   - cron: "0 * * * *"
   workflow_dispatch: {}
 
 permissions:
