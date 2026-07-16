@@ -31,6 +31,7 @@ Usage:
 import hashlib
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -46,7 +47,7 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
 FIGMA_API = "https://api.figma.com/v1"
 ANTHROPIC_API = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_MODEL = "claude-sonnet-5"
+ANTHROPIC_MODEL = "claude-sonnet-5-20260630"
 
 # Node types Figma allows a devStatus to be set on directly.
 STATUS_ELIGIBLE_TYPES = ("SECTION", "FRAME")
@@ -106,9 +107,11 @@ def content_hash(texts: list) -> str:
 
 
 def to_screen_key(figma_node_name: str) -> str:
-    """Turn a Figma frame/section name like 'Home Page' or 'purchase-ticket'
-    into a PascalCase screen key like 'HomePageScreen'."""
-    words = [w for w in figma_node_name.replace("-", " ").replace("_", " ").split(" ") if w]
+    """Turn a Figma frame/section name like 'Home Page', 'purchase-ticket',
+    or 'Splash & Onboarding' into a clean PascalCase screen key like
+    'HomePageScreen' / 'PurchaseTicketScreen' / 'SplashOnboardingScreen'.
+    Anything that isn't a letter or digit is treated as a word separator."""
+    words = [w for w in re.split(r"[^A-Za-z0-9]+", figma_node_name) if w]
     base = "".join(w.capitalize() for w in words)
     return base if base.endswith("Screen") else f"{base}Screen"
 
@@ -157,11 +160,31 @@ Raw Arabic lines extracted from this frame:
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        result = json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        # Surface Anthropic's actual error body instead of a bare "400 Bad
+        # Request" - that body almost always says exactly what's wrong
+        # (bad model id, malformed request, no credits, etc.).
+        print(f"Anthropic API error {e.code}: {e.read().decode('utf-8', 'ignore')}", file=sys.stderr)
+        raise
 
     text = result["content"][0]["text"].strip()
-    return json.loads(text)
+
+    # Defensive: strip a ```json ... ``` or ``` ... ``` fence if the model
+    # added one despite being asked not to, so json.loads doesn't blow up.
+    if text.startswith("```"):
+        text = text.split("```", 2)[1]
+        text = text[len("json"):] if text.startswith("json") else text
+        text = text.strip()
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        print(f"Claude did not return valid JSON for screen '{screen_name}':", file=sys.stderr)
+        print(text, file=sys.stderr)
+        raise e
 
 
 def main() -> None:
